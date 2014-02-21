@@ -1,14 +1,19 @@
 var http = require('http'),
     https = require('https'),
-    url = require('url');
+    url = require('url'),
+    tunnel = require('tunnel');
  
-var _request = http.request;
+var _httpRequest = http.request;
+var _httpsRequest = https.request;
+
 var _proxy = {
   port: 80,
   protocol: 'http:' 
 };
+var _rejectUnauthorized = false;
+var _httpsTunnelingAgent, _httpTunnelingAgent;
 
-http.request = https.request = function (options, callback) {
+var _wrapRequest = function (options, callback, isHttps) {
     // Parse destination URL
     if ('string' === typeof options) {
       var parsed = url.parse(options);
@@ -25,26 +30,42 @@ http.request = https.request = function (options, callback) {
       } 
     }
 
-    // Apply our proxy settings
-    options = {
-      path:     options.protocol + '//' + options.host + ':' + options.port + options.path,
-      host:     _proxy.hostname,
-      port:     _proxy.port,
-      protocol: _proxy.protocol,
-      hostname: _proxy.hostname
-    };
-
     // Call the original request
-    return _request(options, callback);
+    if (isHttps) {
+      options.agent = _httpsTunnelingAgent;
+      options.rejectUnauthorized = false;
+      return _httpsRequest(options, callback);
+    } else {
+      options.agent = _httpTunnelingAgent;
+      return _httpRequest(options, callback);
+    }
 };
 
-http.get = https.get = function(options, callback) {
-  var req = http.request(options, callback);
-  req.end();
-  return req;
+http.request = function(options, callback) {
+    if (options && options.method === 'CONNECT') {
+      return _httpRequest(options, callback);
+    } else {
+      return _wrapRequest(options, callback, false);
+    }
 };
 
-module.exports = function(proxyUrl) {
+https.request = function(options, callback) {
+    return _wrapRequest(options, callback, true);
+};
+
+http.get = function(options, callback) {
+    var req = http.request(options, callback);
+    req.end();
+    return req;
+};
+
+https.get = function(options, callback) {
+    var req = https.request(options, callback);
+    req.end();
+    return req;
+};
+
+module.exports = function(proxyUrl, rejectUnauthorized) {
     var parsed = url.parse(proxyUrl);
 
     _proxy = {
@@ -52,5 +73,22 @@ module.exports = function(proxyUrl) {
       protocol: parsed.protocol || _proxy.protocol,
       hostname: parsed.hostname
     };
+    
+    _httpsTunnelingAgent = tunnel.httpsOverHttp({
+      proxy: {
+        host: _proxy.hostname,
+        port: _proxy.port
+      }
+    });
+    _httpTunnelingAgent = tunnel.httpOverHttp({
+      proxy: {
+        host: _proxy.hostname,
+        port: _proxy.port
+      }
+    });
+    
+    if (! (_rejectUnauthorized = rejectUnauthorized)) {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+    }
 };
 

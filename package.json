@@ -15,5 +15,8 @@
   "bugs": {
     "url": "https://github.com/sony-magic/proxy-out/issues"
   },
-  "homepage": "https://github.com/sony-magic/proxy-out"
+  "homepage": "https://github.com/sony-magic/proxy-out",
+  "dependencies": {
+    "tunnel": "0.0.3"
+  }
 }
